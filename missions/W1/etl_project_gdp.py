@@ -10,91 +10,152 @@ from bs4 import BeautifulSoup
 # 나라별 GDP 위키피디아 URL
 GDP_WIKI_URL = 'https://en.wikipedia.org/wiki/List_of_countries_by_GDP_%28nominal%29'
 
+# 국가명 간소 표기와 정식 표기
+COUNTRY_NAME_NORMALIZATION_DICT = {
+    'DR Congo': 'Democratic Republic of the Congo',
+    'Congo': 'Republic of the Congo',
+    'Bahamas': 'The Bahamas',
+    'Gambia': 'The Gambia',
+}
 
-def extract_gdp_table() -> pd.DataFrame:
+
+def normalize_country_name(country: str) -> str:
     '''
-    위키피디아에서 IMF가 조사한 GDP 테이블을 pd.DataFrame 형으로 가져오기
+    간소 표기된 국가명을 정식 명칭으로 변환
     '''
-    normalization_dict = {
-        'DR Congo': 'Democratic Republic of the Congo',
-        'Congo': 'Republic of the Congo',
-        'Bahamas': 'The Bahamas',
-        'Gambia': 'The Gambia',
-    }
+    if country in COUNTRY_NAME_NORMALIZATION_DICT:
+        country = COUNTRY_NAME_NORMALIZATION_DICT.get(country)
 
-    try:
-        req_wiki_gdp = requests.get(GDP_WIKI_URL, timeout=10)
-    except requests.exceptions.Timeout as e:
-        raise e
-
-    soup = BeautifulSoup(req_wiki_gdp.text, 'html.parser')
-
-    gdp_list = []
-    gdp_table = soup.find(id='Table').parent \
-                    .find_next_sibling('table').find_all('tr') # 'Table' 챕터에 들어있는 테이블 찾기
-
-    for row in gdp_table[3:]: # <thead>에 있는 <tr>과 World 행을 제외
-        row = row.get_text().split('\n')
-        country, gdp = row[1:3]
-        country = country[1:].strip()
-
-        if country in normalization_dict:
-            country = normalization_dict.get(country)
-
-        if gdp == '—': # 공란 처리된 셀을 Null로 처리
-            gdp = None
-        else:
-            gdp = float(gdp.replace(',', ''))
-            gdp = gdp / 1000  # million$ 단위에서 billion$ 단위로 변환
-            gdp = round(gdp, 2)
-        gdp_list.append({'country': country, 'gdp': gdp})
-
-    return pd.DataFrame(gdp_list).set_index('country')
+    return country
 
 
-def extract_region_table_from_csv(csvfile: str) -> pd.DataFrame:
+def cast_float_or_null(value_str: str) -> float | None:
     '''
-    외부 csv 파일에서 region 테이블을 pd.DataFrame 형식으로 가져오기
+    string값을 float로 변환 후 million 단위를 billion 단위로 변환
+    값이 '-'인 경우 NULL로 변환
     '''
-    return pd.read_csv(csvfile, header=0).set_index('country')
-
-
-def refine_null_sort_gdp(df: pd.DataFrame) -> pd.DataFrame:
-    '''
-    GDP 값이 NULL인 데이터 정제하고 GDP 기준으로 정렬
-    '''
-    df = df.dropna(subset=['gdp'])
-    df = df.sort_values('gdp', ascending=False)
-
-    return df
-
-
-def transform_gdp_table_over_100b(df: pd.DataFrame) -> pd.DataFrame:
-    '''
-    GDP가 $100B 이상인 국가들을 내림차순으로 정렬
-    '''
-    return df[df['gdp'] >= 100].sort_values('gdp', ascending=False)
+    if value_str == '—': # 공란 처리된 셀을 Null로 처리
+        value = None
+    else:
+        value = float(value_str.replace(',', ''))
+        value = value / 1000  # million$ 단위에서 billion$ 단위로 변환
+        value = round(value, 2)
+    
+    return value
 
 
 def get_top5_mean(df: pd.DataFrame) -> float:
     '''
     GDP 상위 5개 나라의 GDP 평균 계산하기
     '''
-    top5_gdp_s = df['gdp'].sort_values(ascending=False).head(5)
-    return top5_gdp_s.mean()
+    top5_gdp_s = df['gdp'].sort_values(ascending=False).head(5).mean()
+    return top5_gdp_s
 
 
-def transform_top_5_mean_gdp_by_region(gdp_df: pd.DataFrame,
+def get_gdp_table_from_web() -> pd.DataFrame | None:
+    '''
+    위키피디아에서 IMF가 조사한 GDP 테이블을 pd.DataFrame 형으로 가져오기
+    '''
+    logging.info('Extracting GDP table from wikipedia ...')
+
+    try:
+        req_wiki_gdp = requests.get(GDP_WIKI_URL, timeout=10)
+    except requests.exceptions.Timeout as e:
+        logging.error(e, ": 웹페이지에서 정보를 가져오는데 실패하였습니다.")
+        return None
+        
+    soup = BeautifulSoup(req_wiki_gdp.text, 'html.parser')
+
+    gdp_list = []
+    gdp_table = soup.find(id='Table').parent \
+                    .find_next_sibling('table').find_all('tr') # 'Table' 챕터에 들어있는 테이블 찾기
+
+    gdp_table = gdp_table[3:]
+    for row in gdp_table[3:]: # <thead>에 있는 <tr>과 World 행을 제외
+        row = row.get_text().split('\n')
+        country, gdp = row[1:3]
+        country = country[1:].strip()
+
+        country = normalize_country_name(country)
+
+        gdp_list.append({'country': country, 'gdp': gdp})
+
+    gdp_df = pd.DataFrame(gdp_list).set_index('country')
+
+    logging.info('Successfully extracted GDP table')
+
+    return gdp_df
+
+
+def get_region_table_from_csv(csvfile: str) -> pd.DataFrame | None:
+    '''
+    외부 csv 파일에서 region 테이블을 pd.DataFrame 형식으로 가져오기
+    '''
+    logging.info('Extracting Region table from csvfile ...')
+
+    try:
+        region_df = pd.read_csv(csvfile, header=0)
+    except FileNotFoundError:
+        logging.error('%s이(가) 존재하지 않습니다.', csvfile)
+        return None
+    except Exception as e:
+        logging.error('다음과 같은 이유로 파일을 불러올 수 없습니다. %s', e)
+        return None
+
+    region_df = region_df.set_index('country')
+
+    logging.info('Successfully extracted Region table')
+
+    return region_df
+
+
+def preprocessing_gdp_table(gdp_df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    GDP 테이블을 가공할 수 있도록 전처리
+    - string으로 들어온 gdp 값을 float 또는 NULL로 변환
+    - gdp 값이 NULL인 행을 제거
+    - gdp 값을 기준으로 내림차순 정렬
+    '''
+    logging.info('Preprocessing GDP table ...')
+
+    gdp_df = gdp_df.map(cast_float_or_null)
+    gdp_df = gdp_df.dropna(subset=['gdp']) # GDP가 NULL인 국가 데이터 제거
+    gdp_df = gdp_df.sort_values('gdp', ascending=False)
+
+    logging.info('Successfully preprocessed GDP table')
+
+    return gdp_df
+
+
+def get_gdp_over_100b(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    GDP가 $100B 이상인 국가들을 내림차순으로 정렬
+    '''
+    logging.info('Transforming GDP table ...')
+
+    df = df[df['gdp'] >= 100].sort_values('gdp', ascending=False)
+
+    logging.info('Successfully transformed GDP table')
+
+    return df
+
+
+def get_top_5_mean_gdp_by_region(gdp_df: pd.DataFrame,
                                        region_df: pd.DataFrame
                                        ) -> pd.DataFrame:
     '''
     대륙별로 GDP 상위 5개국의 평균을 계산
     '''
+    logging.info('Transforming for Top 5 mean GDP by region ...')
+
     top5_mean_s = gdp_df.join(region_df, on='country').groupby('region') \
                                                       .apply(lambda x: round(get_top5_mean(x), 2),
                                                              include_groups=False)
+    top5_mean_df = pd.DataFrame({'Top 5 mean GDP($Bilion)': top5_mean_s})
+
+    logging.info('Successfully transformed Top 5 mean GDP table')
     
-    return pd.DataFrame({'Top 5 mean GDP($Bilion)': top5_mean_s})
+    return top5_mean_df
 
 
 def show_table(title: str, df: pd.DataFrame) -> None:
@@ -113,6 +174,19 @@ def show_table(title: str, df: pd.DataFrame) -> None:
     print()
 
 
+def save_as_json(gdp_df: pd.DataFrame) -> None:
+    '''
+    GDP 테이블을 json 파일로 저장합니다.
+    '''
+    logging.info('Loading GDP table to disk ...')
+    try:
+        gdp_df.to_json('Countries_by_GDP.json')
+    except Exception as e:
+        logging.error('다음과 같은 이유로 저장할 수 없습니다: %s', e)
+    else:
+        logging.info('Successfully loaded GDP time')
+
+
 def main() -> None:
     logging.basicConfig(
         filename='elt_project_log.txt',
@@ -121,41 +195,26 @@ def main() -> None:
         level=logging.INFO)
 
     # ----- Data Extraction ----- #
-    logging.info('Extracting GDP table from wikipedia ...')
-    try:
-        gdp_df = extract_gdp_table()
-    except requests.exceptions.Timeout as e:
-        logging.error(e)
-        return
-    else:
-        logging.info('Successfully extracted GDP table')
+    gdp_df = get_gdp_table_from_web()
+    region_df = get_region_table_from_csv('region.csv')
 
-    logging.info('Extracting Region table from csvfile ...')
-    region_df = extract_region_table_from_csv('region.csv')
-    logging.info('Successfully extracted Region table')
+    if gdp_df is None or region_df is None:
+        print("ERROR: Can't get GDP or region data.")
+        return
     # ----- Data Extraction ----- #
 
     # ----- Data Transformation ----- #
-    logging.info('Transforming GDP table ...')
-    gdp_df = refine_null_sort_gdp(gdp_df)
-    show_table('GDP by countries more than $100B', 
-               transform_gdp_table_over_100b(gdp_df))
-    logging.info('Successfully transformed GDP table')
+    gdp_df = preprocessing_gdp_table(gdp_df)
 
-    logging.info('Transforming for Top 5 mean GDP by region ...')
-    show_table('Top 5 mean GDP by region',
-               transform_top_5_mean_gdp_by_region(gdp_df, region_df))
-    logging.info('Successfully transformed Top 5 mean GDP table')
+    gdp_over_100b_df = get_gdp_over_100b(gdp_df)
+    top5_gdp_mean_df = get_top_5_mean_gdp_by_region(gdp_df, region_df)
     # ----- Data Transformation ----- #
 
     # ----- Data Load ----- #
-    logging.info('Loading GDP table to disk ...')
-    try:
-        gdp_df.to_json('Countries_by_GDP.json')
-    except Exception as e:
-        logging.error(e)
-    else:
-        logging.info('Successfully loaded GDP time')
+    show_table('GDP by countries more than $100B', gdp_over_100b_df)
+    show_table('Top 5 mean GDP by region', top5_gdp_mean_df)
+
+    save_as_json(gdp_df)
     # ----- Data Load ----- #
 
 

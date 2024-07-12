@@ -24,6 +24,14 @@ REGION_TABLE_URLS = [
     ['Oceania', 'Demographics'],
 ]
 
+# 국가명 간소 표기와 정식 표기
+COUNTRY_NAME_NORMALIZATION_DICT = {
+    'DR Congo': 'Democratic Republic of the Congo',
+    'Congo': 'Republic of the Congo',
+    'Bahamas': 'The Bahamas',
+    'Gambia': 'The Gambia',
+}
+
 
 class Top5Mean:
     '''
@@ -45,13 +53,6 @@ def extract_gdp_table(cur: sqlite3.Cursor) -> None:
     '''
     위키피디아에서 IMF가 조사한 GDP 테이블을 DB에 저장
     '''
-    normalization_dict = {
-        'DR Congo': 'Democratic Republic of the Congo',
-        'Congo': 'Republic of the Congo',
-        'Bahamas': 'The Bahamas',
-        'Gambia': 'The Gambia',
-    }
-
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS Countries_by_GDP (
                     Country varchar(255) PRIMARY KEY NOT NULL,
@@ -74,8 +75,8 @@ def extract_gdp_table(cur: sqlite3.Cursor) -> None:
         country, gdp = row[1:3]
         country = country[1:].strip()
 
-        if country in normalization_dict:
-            country = normalization_dict.get(country)
+        if country in COUNTRY_NAME_NORMALIZATION_DICT:
+            country = COUNTRY_NAME_NORMALIZATION_DICT.get(country)
 
         if gdp == '—': # 공란 처리된 셀은 제외
             continue
@@ -124,7 +125,6 @@ def load_to_json_on_disk(cur: sqlite3.Cursor) -> None:
         f.write(json.dumps(countries_by_gdp_dict))
 
 
-
 def main() -> None:
     logging.basicConfig(
         filename='elt_project_log.txt',
@@ -151,23 +151,24 @@ def main() -> None:
 
     # ----- Data Transformation ----- #
     logging.info('Transforming GDP table ...')
-    data = cur.execute('''
-                       SELECT * FROM Countries_by_GDP
-                       WHERE GDP_USD_billion >= 100
-                       ORDER BY GDP_USD_billion DESC;
-                       ''')
-    show_table(data)
+    gdp_over_100b_table = cur.execute('''
+                                      SELECT * FROM Countries_by_GDP
+                                      WHERE GDP_USD_billion >= 100
+                                      ORDER BY GDP_USD_billion DESC;
+                                      ''')
     logging.info('Successfully transformed GDP table')
 
     logging.info('Transforming for Top 5 mean GDP by regions ...')
-    data = cur.execute('''
-                       SELECT c.Region, round(top5mean(g.GDP_USD_billion), 2) AS [Top 5 Mean GDP]
-                       FROM Countries_by_GDP g
-                       INNER JOIN Regions c On g.Country = c.Country
-                       GROUP BY c.Region;
-                       ''')
-    show_table(data)
+    top5_gdp_mean_table = cur.execute('''
+                                      SELECT c.Region, round(top5mean(g.GDP_USD_billion), 2) AS [Top 5 Mean GDP]
+                                      FROM Countries_by_GDP g
+                                      INNER JOIN Regions c On g.Country = c.Country
+                                      GROUP BY c.Region;
+                                      ''')
     logging.info('Successfully transformed Top 5 mean GDP table')
+
+    show_table(gdp_over_100b_table)
+    show_table(top5_gdp_mean_table)
     # ----- Data Transformation ----- #
 
     # ----- Data Load ----- #
