@@ -1,6 +1,9 @@
 import time
 import queue
-from multiprocessing import Value, Manager, Pool
+from multiprocessing import Manager, Pool
+
+
+NUM_WORKERS = 4
 
 
 def work(worker_id, tasks_to_accomplish, tasks_that_are_done):
@@ -21,7 +24,6 @@ def work(worker_id, tasks_to_accomplish, tasks_that_are_done):
 
 if __name__ == '__main__':
     with Manager() as manager:
-        num_workers = manager.Value('i', 0)
         tasks_to_accomplish = manager.Queue()
         tasks_that_are_done = manager.Queue()
 
@@ -29,6 +31,6 @@ if __name__ == '__main__':
             tasks_to_accomplish.put(i)
             print(f"Task no {str(i)}")
 
-        with Pool(4) as p:
-            p.starmap(work, [(i, tasks_to_accomplish, tasks_that_are_done) for i in range(4)])
+        with Pool(NUM_WORKERS) as p:
+            p.starmap(work, [(i, tasks_to_accomplish, tasks_that_are_done) for i in range(NUM_WORKERS)])
 
