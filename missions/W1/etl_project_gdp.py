@@ -2,6 +2,8 @@
 etl_project_gdp: 나라별 GDP 리스트를 위키피디아에서 가져오기
 '''
 import logging
+from typing import Optional
+
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -63,7 +65,7 @@ def get_gdp_table_from_web() -> pd.DataFrame | None:
     except requests.exceptions.Timeout as e:
         logging.error(e, ": 웹페이지에서 정보를 가져오는데 실패하였습니다.")
         return None
-        
+
     soup = BeautifulSoup(req_wiki_gdp.text, 'html.parser')
 
     gdp_list = []
@@ -154,7 +156,7 @@ def get_top_5_mean_gdp_by_region(gdp_df: pd.DataFrame,
     top5_mean_df = pd.DataFrame({'Top 5 mean GDP($Bilion)': top5_mean_s})
 
     logging.info('Successfully transformed Top 5 mean GDP table')
-    
+
     return top5_mean_df
 
 
@@ -187,6 +189,56 @@ def save_as_json(gdp_df: pd.DataFrame) -> None:
         logging.info('Successfully loaded GDP time')
 
 
+def extract() -> tuple[pd.DataFrame, pd.DataFrame]:
+    '''
+    GDP 테이블과 Region 테이블을 각 Data Source로 부터 가져옵니다.
+    '''
+    gdp_df = get_gdp_table_from_web()
+    region_df = get_region_table_from_csv('region.csv')
+
+    return gdp_df, region_df
+
+
+def transform(gdp_df: Optional[pd.DataFrame], region_df: Optional[pd.DataFrame]
+              ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    '''
+    가져온 GDP 데이블과 Region 테이블을 통해 두가지 방식으로 변환한다.
+    - GDP가 $100B 이상이고 내림차순으로 정렬된 국가 테이블
+    - 각 대륙(Region)별 GDP 상위 5위까지의 평균 GDP 테이블
+    '''
+
+    if gdp_df is None or region_df is None:
+        print("ERROR: Can't get GDP or region data.")
+        return None, None
+
+    gdp_df = preprocessing_gdp_table(gdp_df)
+
+    gdp_over_100b_df = get_gdp_over_100b(gdp_df)
+    top5_gdp_mean_df = get_top_5_mean_gdp_by_region(gdp_df, region_df)
+
+    return gdp_over_100b_df, top5_gdp_mean_df
+    
+
+def load(gdp_df: Optional[pd.DataFrame],
+         gdp_over_100b_df: Optional[pd.DataFrame], 
+         top5_gdp_mean_df: Optional[pd.DataFrame]
+         ) -> None:
+    '''
+    가공한 두 테이블(gdp_over_100b_df, top5_gdp_mean_df)을 출력하고
+    GDP 테이블을 디스크에 저장한다.
+    '''
+    if ( gdp_df is None 
+        or gdp_over_100b_df is None
+        or top5_gdp_mean_df is None ):
+        print("ERROR: Din't get GDP over $100B table.")
+        return
+
+    show_table('GDP by countries more than $100B', gdp_over_100b_df)
+    show_table('Top 5 mean GDP by region', top5_gdp_mean_df)
+
+    save_as_json(gdp_df)
+
+
 def main() -> None:
     logging.basicConfig(
         filename='elt_project_log.txt',
@@ -194,28 +246,9 @@ def main() -> None:
         datefmt='%Y-%b-%d-%H-%M-%S',
         level=logging.INFO)
 
-    # ----- Data Extraction ----- #
-    gdp_df = get_gdp_table_from_web()
-    region_df = get_region_table_from_csv('region.csv')
-
-    if gdp_df is None or region_df is None:
-        print("ERROR: Can't get GDP or region data.")
-        return
-    # ----- Data Extraction ----- #
-
-    # ----- Data Transformation ----- #
-    gdp_df = preprocessing_gdp_table(gdp_df)
-
-    gdp_over_100b_df = get_gdp_over_100b(gdp_df)
-    top5_gdp_mean_df = get_top_5_mean_gdp_by_region(gdp_df, region_df)
-    # ----- Data Transformation ----- #
-
-    # ----- Data Load ----- #
-    show_table('GDP by countries more than $100B', gdp_over_100b_df)
-    show_table('Top 5 mean GDP by region', top5_gdp_mean_df)
-
-    save_as_json(gdp_df)
-    # ----- Data Load ----- #
+    gdp_df, region_df = extract()
+    gdp_over_100b_df, top5_gdp_mean_df = transform(gdp_df, region_df)
+    load(gdp_df, gdp_over_100b_df, top5_gdp_mean_df)
 
 
 if __name__ == '__main__':
