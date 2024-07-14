@@ -1,30 +1,34 @@
 import time
-from multiprocessing import Process, Queue
+import queue
+from multiprocessing import Value, Manager, Pool
 
 
-def work(name, tasks_to_accomplish, tasks_that_are_done):
+def work(worker_id, tasks_to_accomplish, tasks_that_are_done):
+    name = str(worker_id)
+
     while not tasks_to_accomplish.empty():
-        item = tasks_to_accomplish.get_nowait()
+        try:
+            item = tasks_to_accomplish.get_nowait()
+        except ValueError:
+            print(f"Error: Process {name} failed to acess the queue")
+            return
+        except queue.Empty:
+            return
         time.sleep(0.5)
         tasks_that_are_done.put(item)
-        print(f"Task no {str(item)} is done by Process-{str(name)}")
+        print(f"Task no {str(item)} is done by Process-{name}")
 
 
 if __name__ == '__main__':
-    tasks_to_accomplish = Queue()
-    tasks_that_are_done = Queue()
+    with Manager() as manager:
+        num_workers = manager.Value('i', 0)
+        tasks_to_accomplish = manager.Queue()
+        tasks_that_are_done = manager.Queue()
 
-    for i in range(10):
-        tasks_to_accomplish.put(i)
-        print(f"Task no {str(i)}")
+        for i in range(10):
+            tasks_to_accomplish.put(i)
+            print(f"Task no {str(i)}")
 
-    processes = [
-        Process(target=work, args=(i, tasks_to_accomplish, tasks_that_are_done))
-        for i in range(4)
-    ]
+        with Pool(4) as p:
+            p.starmap(work, [(i, tasks_to_accomplish, tasks_that_are_done) for i in range(4)])
 
-    for p in processes:
-        p.start()
-
-    for p in processes:
-        p.join()
