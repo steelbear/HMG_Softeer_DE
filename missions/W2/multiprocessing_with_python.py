@@ -9,7 +9,7 @@ NUM_WORKERS = 4
 def work(worker_id, tasks_to_accomplish, tasks_that_are_done):
     name = str(worker_id)
 
-    while not tasks_to_accomplish.empty():
+    while True:
         try:
             item = tasks_to_accomplish.get_nowait()
         except ValueError:
