@@ -46,9 +46,9 @@ RUN sudo wget -O /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/rele
 RUN sudo chmod +x /usr/local/bin/dumb-init
 
 # hadoop 파일이 이미 로컬에 있는 경우 사용
-COPY hadoop-3.4.0-aarch64.tar.gz /home/${USERNAME}/
+# COPY hadoop-3.4.0-aarch64.tar.gz /home/${USERNAME}/
 # hadoop 파일을 서버에서 가져오기
-# RUN wget https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0-aarch64.tar.gz
+RUN wget https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0-aarch64.tar.gz
 
 # hadoop 압축 파일 해제 및 세팅
 RUN tar -xzvf hadoop-3.4.0-aarch64.tar.gz
