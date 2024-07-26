@@ -27,6 +27,8 @@ if __name__ == "__main__":
         schema='word string, count int',
     )
 
+    df.show()
+
     df.write.csv('userdata/output_wordcount')
 
     spark.stop()

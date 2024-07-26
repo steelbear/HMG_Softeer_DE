@@ -5,9 +5,9 @@ services:
     hostname: master
     ports:
       - 4040:4040
-      - 4041:4041
       - 7077:7077
       - 8080:8080
+      - 15002:15002
     volumes:
       - type: bind
         source: userdata/
