@@ -1,4 +1,3 @@
-import sys
 from operator import add
 
 from pyspark import SparkFiles

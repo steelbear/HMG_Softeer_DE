@@ -80,5 +80,9 @@
 # - SPARK_BEELINE_OPTS, to set config properties only for the beeline cli (e.g. "-Dx=y")
 # - SPARK_BEELINE_MEMORY, Memory for beeline (e.g. 1000M, 2G) (Default: 1G)
 
+export SPARK_HOME=/spark
+export SPARK_CONF_DIR=$SPARK_HOME/conf
+
 export SPARK_LOCAL_DIRS=/tmp
 export SPARK_WORKER_DIR=/tmp
+export SPARK_VERSION=3.5.1

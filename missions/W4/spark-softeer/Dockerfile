@@ -9,10 +9,16 @@ RUN useradd sparkuser -s /bin/bash -d /home/sparkuser -p spark
 RUN echo "sparkuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 RUN mkdir /home/sparkuser
-RUN chown sparkuser:users /home/sparkuser
+RUN chown sparkuser:sparkuser /home/sparkuser
 
 USER sparkuser
 WORKDIR /home/sparkuser
+
+RUN wget https://bootstrap.pypa.io/get-pip.py
+RUN sudo chown sparkuser:sparkuser get-pip.py
+RUN python3 get-pip.py
+RUN rm get-pip.py
+RUN python3 -m pip install pandas matplotlib pyspark pyarrow grpcio protobuf grpcio-status
 
 RUN wget https://dlcdn.apache.org/spark/spark-3.5.1/spark-3.5.1-bin-hadoop3.tgz
 RUN tar -zxvf spark-3.5.1-bin-hadoop3.tgz
